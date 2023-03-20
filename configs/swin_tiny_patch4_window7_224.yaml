@@ -1,0 +1,107 @@
+DATA:
+  IMAGE_SIZE: 224
+
+MODEL:
+  TYPE: swin
+  NAME: swin_tiny_patch4_window7_224
+  DROP_PATH_RATE: 0.2
+  NUM_CLASSES: 1000
+  SWIN:
+    PATCH_SIZE: 4
+    EMBED_DIM: 96
+    IN_CHANS: 3
+    DEPTHS: [ 2, 2, 6, 2 ]
+    NUM_HEADS: [ 3, 6, 12, 24 ]
+    WINDOW_SIZE: 7
+
+DATASET:
+  TRAIN_DATA_PATH: imagenet/ILSVRC/Data/CLS-LOC/train
+  VALID_DATA_PATH: imagenet/ILSVRC/Data/CLS-LOC/val
+  VALID_ANNOTATION_PATH: imagenet/ILSVRC/Annotations/CLS-LOC/val
+
+# Augmentation
+AUGMENT:
+  TRAIN_TRANSFORMS:
+    RandomSizedCrop:
+      min_max_height: [156, 224]
+      height: 224
+      width: 224
+      p: 0.5
+    OneOf1:
+      Equalize:
+        p: 0.5
+      Solarize:
+        p: 0.5
+      p: 0.2
+    OneOf2:
+      GaussNoise:
+        var_limit: [10.0, 50.0]
+      GaussianBlur:
+        blur_limit: 3
+      MotionBlur:
+        blur_limit: 3
+      Blur:
+        blur_limit: [3, 7]
+      p: 0.2
+    HorizontalFlip:
+      p: 0.5
+    Rotate:
+      limit: 45
+      p: 0.5
+    RandomGamma:
+      gamma_limit: [80, 120]
+      p: 0.5
+    ColorJitter:
+      brightness: 0.4
+      contrast: 0.4
+      saturation: 0.4
+      hue: 0.2
+      p: 0.5
+    CoarseDropout:
+      max_holes: 8
+      max_height: 44
+      max_width: 44
+      p: 0.5
+    OneOf3:
+      OpticalDistortion:
+        p: 0.3
+      RandomBrightnessContrast:
+        p: 0.3
+      HueSaturationValue:
+        p: 0.3
+      GridDistortion:
+        num_steps: 5
+        distort_limit: 0.3
+        p: 0.3
+      p: 0.3
+    Normalize:
+        mean: [0.485, 0.456, 0.406]
+        std: [0.229, 0.224, 0.225]
+
+  VALID_TRANSFORMS:
+    Resize:
+      height: 256
+      width: 256
+      p: 1
+      interpolation: 2
+    CenterCrop:
+      height: 224
+      width: 224
+      p: 1
+    Normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+ 
+# Optimizer configurations
+OPTIMIZER:
+  TYPE: "AdamW"
+  LR: 0.001
+  SCHEDULER: "CustomCosineAnnealingWarmupRestarts"
+  SCHEDULER_INTERVAL: "step"
+  SCHEDULER_PARAM:
+    first_cycle_steps: 140000
+    cycle_mult: 1
+    max_lr: 0.001
+    min_lr: 0.000015
+    warmup_steps: 13000
+    gamma: 0.02
