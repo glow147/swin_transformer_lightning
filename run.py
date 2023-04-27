@@ -28,7 +28,7 @@ def train(cfg, model, train_dataloader, valid_dataloader):
     strategy = pl.strategies.DDPStrategy(find_unused_parameters=False)
     trainer = pl.Trainer(accelerator='gpu', devices=torch.cuda.device_count(), max_epochs=300,
                          num_sanity_val_steps=0, callbacks=[ckpt_callback, lr_callback],
-                         strategy=strategy if torch.cuda.device_count() > 1 else None,
+                         strategy=strategy,
                          precision=16, profiler=profiler, benchmark=True, gradient_clip_val=5, gradient_clip_algorithm='norm',
                          logger=wandb_logger)
 
@@ -50,11 +50,12 @@ if __name__ == '__main__':
 
     train_collate_fn = custom_collate(cfg, is_train=True)
     train_dataset = imagenet_train_dataset(cfg)
-    train_dataloader = DataLoader(train_dataset, prefetch_factor=4, shuffle=True, batch_size=512, num_workers=16, pin_memory=True, collate_fn=train_collate_fn)
+    train_dataloader = DataLoader(train_dataset, prefetch_factor=4, shuffle=True, batch_size=cfg.OPTIMIZER.BATCH_SIZE, num_workers=16, pin_memory=True, collate_fn=train_collate_fn)
+    cfg.OPTIMIZER.NUM_STEPS = len(train_dataloader)
 
     valid_collate_fn = custom_collate(cfg, is_train=False)
     valid_dataset = imagenet_valid_dataset(cfg, train_dataset.get_token())
-    valid_dataloader = DataLoader(valid_dataset, shuffle=False, batch_size=512, num_workers=8, pin_memory=True, collate_fn=valid_collate_fn)
+    valid_dataloader = DataLoader(valid_dataset, shuffle=False, batch_size=cfg.OPTIMIZER.BATCH_SIZE, num_workers=8, pin_memory=True, collate_fn=valid_collate_fn)
 
     model = SwinTransformer(cfg = cfg,
                             img_size=cfg.DATA.IMAGE_SIZE,

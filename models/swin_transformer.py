@@ -622,12 +622,8 @@ class SwinTransformer(pl.LightningModule):
         outputs = self.forward(imgs)
 
         loss = self.criterion(outputs, labels)
-        # acc = accuracy(outputs,labels)
-        # _, predicted = torch.max(outputs, dim=1)
-        # acc = (predicted == labels).sum().item() / len(predicted)
 
         self.log('train_loss', loss, sync_dist=True)
-        # self.log('train_acc', acc, sync_dist=True, prog_bar=True, on_step=True)
         self.log('lr', self.trainer.optimizers[0].param_groups[0]['lr'],prog_bar=True, on_step=True)
  
         return {'loss':loss}
@@ -637,40 +633,37 @@ class SwinTransformer(pl.LightningModule):
         imgs, labels = valid_batch
 
         outputs = self.forward(imgs)
-        # loss = self.criterion(outputs, labels).item()
-        
+
         acc,_ = accuracy(outputs, labels, topk=(1,5))
 
-        # _, predicted = torch.max(outputs, dim=1)
-
-        # acc = (predicted == labels).sum().item() / len(predicted)
-
         return {'acc':acc}
-    '''
-    @torch.no_grad()
-    def validation_step_end(self, outputs):
-        loss = torch.tensor(outputs['loss'].detach()).mean().item()
-        acc = torch.tensor(outputs['acc'].detach()).mean().item()
-        self.log('loss', loss, sync_dist=True)
-        self.log('acc', acc, sync_dist=True)
-        return {'loss':loss, 'acc':acc}
-    '''
 
     @torch.no_grad()
-    def validation_epoch_end(self, outputs): # Accuracy timm 으로 수정하기
+    def validation_epoch_end(self, outputs):
         loss_sum, acc_sum = 0, 0
         for output in outputs:
-            # loss_sum += output['loss']
             acc_sum += output['acc']
-        # loss = loss_sum / len(outputs)
         acc = acc_sum.item() / len(outputs)
-        # self.log('loss', loss, sync_dist=True)
         self.log('acc', acc, sync_dist=True, prog_bar=True)
         return {'acc':acc}
         
     def configure_optimizers(self):
+        world_size = torch.distributed.get_world_size()
         optimizer = getattr(torch.optim, self.cfg.TYPE)
-        optimizer = optimizer(self.parameters(), lr=self.cfg.LR, weight_decay=0.05)
+   
+        self.cfg.SCHEDULER_PARAM.max_lr = self.cfg.SCHEDULER_PARAM.max_lr * self.cfg.BATCH_SIZE * world_size / 512.0
+        self.cfg.SCHEDULER_PARAM.min_lr = self.cfg.SCHEDULER_PARAM.min_lr * self.cfg.BATCH_SIZE * world_size / 512.0
+
+        skip = {}
+        skip_keywords = {}
+        if hasattr(self, 'no_weight_decay'):
+            skip = self.no_weight_decay()
+        if hasattr(self, 'no_weight_decay_keywords'):
+            skip_keywords = self.no_weight_decay_keywords()
+        parameters = self.set_weight_decay(self, skip, skip_keywords)
+
+        optimizer = optimizer(parameters, lr=self.cfg.SCHEDULER_PARAM.max_lr, weight_decay=self.cfg.WEIGHT_DECAY)
+        #optimizer = optimizer(self.parameters(), lr=self.cfg.SCHEDULER_PARAM.max_lr, weight_decay=self.cfg.WEIGHT_DECAY)
 
         if not self.cfg.SCHEDULER:
             scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1)
@@ -682,9 +675,13 @@ class SwinTransformer(pl.LightningModule):
             scheduler = getattr(torch.optim.lr_scheduler, self.cfg.SCHEDULER)
         elif hasattr(utility, self.cfg.SCHEDULER):
             scheduler = getattr(utility, self.cfg.SCHEDULER)
+            total_steps = int(self.cfg.EPOCHS * self.cfg.NUM_STEPS)
+            warmup_steps = int(self.cfg.WARMUP_EPOCHS * self.cfg.NUM_STEPS)
+            self.cfg.SCHEDULER_PARAM.first_cycle_steps = total_steps // world_size
+            self.cfg.SCHEDULER_PARAM.warmup_steps = warmup_steps // world_size
         else:
             raise ModuleNotFoundError
-        
+
         scheduler = {
                 'scheduler': scheduler(optimizer, **self.cfg.SCHEDULER_PARAM),
                 'interval': self.cfg.SCHEDULER_INTERVAL,
@@ -695,3 +692,26 @@ class SwinTransformer(pl.LightningModule):
 
     def optimizer_zero_grad(self, epoch, batch_idx, optimizer, optimizer_idx):
         optimizer.zero_grad(set_to_none=True)
+
+    def set_weight_decay(self, model, skip_list=(), skip_keywords=()):
+        has_decay = []
+        no_decay = []
+
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue  # frozen weights
+            if len(param.shape) == 1 or name.endswith(".bias") or (name in skip_list) or \
+                self.check_keywords_in_name(name, skip_keywords):
+                no_decay.append(param)
+                # print(f"{name} has no weight decay")
+            else:
+                has_decay.append(param)
+        return [{'params': has_decay},
+            {'params': no_decay, 'weight_decay': 0.}]
+
+    def check_keywords_in_name(self, name, keywords=()):
+        isin = False
+        for keyword in keywords:
+            if keyword in name:
+                isin = True
+        return isin
