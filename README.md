@@ -19,3 +19,18 @@ eq : int(256 / 224 * output_image_size)). Secondly, they did CenterCrop for focu
 This process results in a difference of about 2% in accuracy.
 
 3. torch transform resize and albumentation resize have different value. Even I used same image and same interpolation.
+
+4. setting weight decay to bias, It drop accuracy about 2%
+
+## Solve
+
+1. Use original training dataset.
+2. Done.
+3. I only did timm library. You can see in Figure 1.
+4. Done.
+
+## Result
+
+Max Acc : 81.121
+
+![ACC](https://user-images.githubusercontent.com/26201768/234764443-379fb38d-0bd5-4ef8-ad98-42956afc6a4d.png)Figure 1. Accuracy
