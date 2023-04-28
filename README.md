@@ -8,6 +8,10 @@ After 300 epochs training, It almost acquired <b>78%</b> accuracy from validatio
 
 This result is lower <b>4%</b> than original code.
 
+~~~
+usage: python run.py
+~~~
+
 ## Cause
 
 1. I prepared resized training image ( original size -> 224, 224 ) for speed up training, valid dataset also same.
